@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Threading;
 
+
 namespace DotNet9Console
 {
     internal class Program
@@ -127,6 +128,5 @@ namespace DotNet9Console
                 }
                 Console.WriteLine();
             }
-        }
     }
 }
