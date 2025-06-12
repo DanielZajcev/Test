@@ -1,132 +1,164 @@
 using System;
 using System.Collections.Generic;
-using System.Threading;
-
+using System.Drawing;
+using System.Windows.Forms;
 
 namespace DotNet9Console
 {
-    internal class Program
+    internal class GameForm : Form
     {
-        static readonly int width = 40;
-        static readonly int height = 20;
-        static LinkedList<(int x, int y)> snake = new();
-        static (int x, int y) direction = (1, 0);
-        static (int x, int y) food;
-        static readonly Random random = new();
-        static bool running = true;
+        private const int CellSize = 20;
+        private const int GridWidth = 20;
+        private const int GridHeight = 20;
 
-        static void Main(string[] args)
+        private enum GameState { Title, Playing, GameOver }
+        private GameState state = GameState.Title;
+
+        private readonly List<Point> snake = new();
+        private Point direction = new(1, 0);
+        private Point food;
+        private readonly Random random = new();
+        private readonly Timer timer;
+
+        private readonly Button startButton;
+        private readonly Button exitButton;
+
+        public GameForm()
         {
-            Console.CursorVisible = false;
-            Console.Clear();
-            Console.SetWindowSize(width + 2, height + 2);
-            Console.SetBufferSize(width + 2, height + 2);
-            InitSnake();
-            PlaceFood();
+            Text = "Snake";
+            ClientSize = new Size(GridWidth * CellSize, GridHeight * CellSize);
+            DoubleBuffered = true;
 
-            var inputThread = new Thread(ReadInput) { IsBackground = true };
-            inputThread.Start();
+            startButton = new Button { Text = "Start", Width = 80 };
+            exitButton = new Button { Text = "Exit", Width = 80 };
+            Controls.Add(startButton);
+            Controls.Add(exitButton);
 
-            while (running)
-            {
-                Update();
-                Draw();
-                Thread.Sleep(150);
-            }
+            startButton.Click += (s, e) => StartGame();
+            exitButton.Click += (s, e) => Close();
 
-            Console.SetCursorPosition(0, height + 1);
-            Console.WriteLine("Game Over. Press any key to exit...");
-            Console.ReadKey(true);
+            LayoutTitleScreen();
+
+            timer = new Timer { Interval = 150 };
+            timer.Tick += (s, e) => GameLoop();
+
+            KeyDown += OnKeyDown;
         }
 
-        static void ReadInput()
+        private void LayoutTitleScreen()
         {
-            while (running)
-            {
-                if (!Console.KeyAvailable)
-                {
-                    Thread.Sleep(10);
-                    continue;
-                }
-
-                var key = Console.ReadKey(true).Key;
-                switch (key)
-                {
-                    case ConsoleKey.UpArrow:
-                        if (direction != (0, 1)) direction = (0, -1);
-                        break;
-                    case ConsoleKey.DownArrow:
-                        if (direction != (0, -1)) direction = (0, 1);
-                        break;
-                    case ConsoleKey.LeftArrow:
-                        if (direction != (1, 0)) direction = (-1, 0);
-                        break;
-                    case ConsoleKey.RightArrow:
-                        if (direction != (-1, 0)) direction = (1, 0);
-                        break;
-                }
-            }
+            startButton.Location = new Point((ClientSize.Width - startButton.Width) / 2, ClientSize.Height / 2 - 30);
+            exitButton.Location = new Point((ClientSize.Width - exitButton.Width) / 2, ClientSize.Height / 2 + 10);
         }
 
-        static void InitSnake()
+        private void StartGame()
         {
+            Controls.Remove(startButton);
+            Controls.Remove(exitButton);
+            state = GameState.Playing;
             snake.Clear();
-            snake.AddFirst((width / 2, height / 2));
+            snake.Add(new Point(GridWidth / 2, GridHeight / 2));
+            direction = new Point(1, 0);
+            PlaceFood();
+            timer.Start();
+            Focus();
         }
 
-        static void PlaceFood()
+        private void OnKeyDown(object? sender, KeyEventArgs e)
         {
-            do
+            if (state != GameState.Playing) return;
+
+            switch (e.KeyCode)
             {
-                food = (random.Next(width), random.Next(height));
-            } while (snake.Contains(food));
+                case Keys.Up:
+                    if (direction != new Point(0, 1)) direction = new Point(0, -1);
+                    break;
+                case Keys.Down:
+                    if (direction != new Point(0, -1)) direction = new Point(0, 1);
+                    break;
+                case Keys.Left:
+                    if (direction != new Point(1, 0)) direction = new Point(-1, 0);
+                    break;
+                case Keys.Right:
+                    if (direction != new Point(-1, 0)) direction = new Point(1, 0);
+                    break;
+            }
         }
 
-        static void Update()
+        private void GameLoop()
         {
-            var head = snake.First.Value;
-            var newHead = (head.x + direction.x, head.y + direction.y);
+            var head = snake[0];
+            var newHead = new Point(head.X + direction.X, head.Y + direction.Y);
 
-            if (newHead.x < 0 || newHead.x >= width ||
-                newHead.y < 0 || newHead.y >= height ||
+            if (newHead.X < 0 || newHead.X >= GridWidth ||
+                newHead.Y < 0 || newHead.Y >= GridHeight ||
                 snake.Contains(newHead))
             {
-                running = false;
+                timer.Stop();
+                state = GameState.GameOver;
+                Invalidate();
                 return;
             }
 
-            snake.AddFirst(newHead);
-            if (newHead == food)
+            snake.Insert(0, newHead);
+            if (newHead.Equals(food))
             {
                 PlaceFood();
             }
             else
             {
-                snake.RemoveLast();
+                snake.RemoveAt(snake.Count - 1);
             }
+
+            Invalidate();
         }
 
-        static void Draw()
+        private void PlaceFood()
         {
-            Console.SetCursorPosition(0, 0);
-            for (int y = 0; y < height; y++)
+            do
             {
-                for (int x = 0; x < width; x++)
-                {
-                    if (snake.Contains((x, y)))
-                    {
-                        Console.Write('O');
-                    }
-                    else if (food == (x, y))
-                    {
-                        Console.Write('*');
-                    }
-                    else
-                    {
-                        Console.Write(' ');
-                    }
-                }
-                Console.WriteLine();
+                food = new Point(random.Next(GridWidth), random.Next(GridHeight));
+            } while (snake.Contains(food));
+        }
+
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            base.OnPaint(e);
+            var g = e.Graphics;
+            g.Clear(Color.Black);
+
+            if (state == GameState.Title)
+            {
+                using var font = new Font(FontFamily.GenericSansSerif, 24, FontStyle.Bold);
+                var title = "Snake Game";
+                var size = g.MeasureString(title, font);
+                g.DrawString(title, font, Brushes.Lime, (ClientSize.Width - size.Width) / 2, ClientSize.Height / 4);
+                return;
             }
+
+            foreach (var p in snake)
+            {
+                g.FillRectangle(Brushes.Lime, p.X * CellSize, p.Y * CellSize, CellSize, CellSize);
+            }
+            g.FillEllipse(Brushes.Red, food.X * CellSize, food.Y * CellSize, CellSize, CellSize);
+
+            if (state == GameState.GameOver)
+            {
+                using var font = new Font(FontFamily.GenericSansSerif, 20, FontStyle.Bold);
+                var text = "Game Over";
+                var size = g.MeasureString(text, font);
+                g.DrawString(text, font, Brushes.Yellow, (ClientSize.Width - size.Width) / 2, ClientSize.Height / 2);
+            }
+        }
+    }
+
+    internal static class Program
+    {
+        [STAThread]
+        static void Main()
+        {
+            ApplicationConfiguration.Initialize();
+            Application.Run(new GameForm());
+        }
     }
 }
